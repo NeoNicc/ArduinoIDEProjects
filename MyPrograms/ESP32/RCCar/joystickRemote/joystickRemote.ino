@@ -3,12 +3,14 @@
 
 uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
+const int JOY_SW_PIN = 32;
 const int JOY_X_PIN = 34;
 const int JOY_Y_PIN = 35;
 
 typedef struct struct_message {
   int xValue;
   int yValue;
+  int click;
 } struct_message;
 
 struct_message myData;
@@ -17,6 +19,8 @@ esp_now_peer_info_t peerInfo;
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
+
+  pinMode(JOY_SW_PIN, INPUT_PULLUP);
 
   WiFi.mode(WIFI_STA);
 
@@ -39,6 +43,7 @@ void loop() {
   // put your main code here, to run repeatedly:
   myData.xValue = analogRead(JOY_X_PIN);
   myData.yValue = analogRead(JOY_Y_PIN);
+  myData.click = digitalRead(JOY_SW_PIN);
 
   esp_now_send(broadcastAddress, (uint8_t *) &myData, sizeof(myData));
 
