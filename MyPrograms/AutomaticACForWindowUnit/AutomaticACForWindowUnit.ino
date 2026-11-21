@@ -19,7 +19,7 @@ Servo myServo;
 int setTemp = 68;
 float temp = 0.0;
 int hum = 0;
-int pos = 90;
+int pos = 0;
 int speed = 3;
 unsigned long lastDHTRead = millis();
 unsigned long lastScreenUpdate = millis();
@@ -97,11 +97,11 @@ void newTemp() {
 }
 
 void changeTemp() {
-  if (temp > (float)setTemp) {
-    pos = 60;
+  if (temp > (float)setTemp + 1.0) {
+    pos = 180;
     myServo.write(pos);
-  } else if (temp < (float)setTemp) {
-    pos = 130;
+  } else if (temp < (float)setTemp - 1.0) {
+    pos = 0;
     myServo.write(pos);
   } else {
     //do nothing

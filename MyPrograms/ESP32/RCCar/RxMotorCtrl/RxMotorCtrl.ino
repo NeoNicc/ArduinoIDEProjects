@@ -2,21 +2,23 @@
 #include <esp_now.h>
 #include <ESP32Servo.h>
 
-const int PWMA = 4;
-const int AIN1 = 5;
-const int AIN2 = 18;
-const int STBY = 23;
-const int SRVO = 21;
+const int PWMA = 18;
+const int AIN1 = 19;
+const int AIN2 = 23;
+const int PWMB = 32;
+const int BIN1 = 33;
+const int BIN2 = 27;
+const int STBY = 26;
 
 const int BUZZER = 22;
 
-//driving variables
-Servo steeringServo;
-
 const int DEADZONE = 150;
-const int CENTER_VAL = 1870;
-const int YCENTER_VAL = 1920;
+const int XCENTER_VAL = 1900;
+const int YCENTER_VAL = 1900;
+int accelL;
+int accelR;
 
+int serialTimer = millis();
 //honk variables
 enum HonkState {IDLE, HONK, PAUSE, HONKHONK};
 HonkState buzzerState = IDLE;
@@ -48,13 +50,11 @@ void setup() {
   pinMode(PWMA, OUTPUT);
   pinMode(AIN1, OUTPUT);
   pinMode(AIN2, OUTPUT);
+  pinMode(PWMB, OUTPUT);
+  pinMode(BIN1, OUTPUT);
+  pinMode(BIN2, OUTPUT);
   pinMode(STBY, OUTPUT);
   pinMode(BUZZER, OUTPUT);
-
-  //servo setup
-  steeringServo.setPeriodHertz(50);
-  steeringServo.attach(SRVO, 500, 2400);
-  steeringServo.write(90);
 
   //driver requires STBY to be HIGH
   digitalWrite(STBY, HIGH);
@@ -77,35 +77,46 @@ void loop() {
     newDataRec = false; //sentinel reset
     //dc motor
     int rawX = incomingData.xValue;
-    int displacement = rawX - CENTER_VAL;
-
-    if (abs(displacement) < DEADZONE) {
-      brake();
-    } else if (displacement > 0) {
-      int speed = map(displacement, DEADZONE, (4095 - CENTER_VAL), 0, 255);
-      speed = constrain(speed, 0, 255);
-      forwards(speed);
-    } else {
-      int speed = map(abs(displacement), DEADZONE, CENTER_VAL, 0, 255);
-      speed = constrain(speed, 0, 255);
-      reverse(speed);
-    }
-
-    //Servo
     int rawY = incomingData.yValue;
+    int xDisplacement = rawX - XCENTER_VAL;
     int yDisplacement = rawY - YCENTER_VAL;
 
-    int servoAngle = map(rawY, 100, 3750, 40, 160);
-
-    if (abs(yDisplacement) < DEADZONE) {
-      steeringServo.write(90);
+    if (abs(xDisplacement) < DEADZONE) {
+      brake();
+    } else if (xDisplacement > 0) {
+      int speed = map(xDisplacement, DEADZONE, (4095 - XCENTER_VAL), 0, 255);
+      speed = constrain(speed, 0, 255);
+        if (yDisplacement > 149) {
+          accelR = map(yDisplacement, DEADZONE, (4095 - YCENTER_VAL), 0, 125);
+          accelR = constrain(accelR, 0, 125);
+          accelL = accelR - (2*accelR);
+        } else if (yDisplacement < -149) {
+          accelL = map(abs(yDisplacement), DEADZONE, (4095 - YCENTER_VAL), 0, 125);
+          accelL = constrain(accelL, 0, 125);
+          accelR = accelL - (2*accelL);
+        }
+      forwardsR(speed + accelL);
+      forwardsL(speed + accelR);
+      printFWMessage(millis());
     } else {
-      servoAngle = constrain(servoAngle, 40, 160);
-      steeringServo.write(servoAngle);
+      int speed = map(abs(xDisplacement), DEADZONE, (4095 - XCENTER_VAL), 0, 255);
+      speed = constrain(speed, 0, 255);
+      if (yDisplacement > 149) {
+          accelR = map(yDisplacement, DEADZONE, (4095 - YCENTER_VAL), 0, 125);
+          accelR = constrain(accelR, 0, 125);
+          accelL = accelR - (2*accelR);
+        } else if (yDisplacement < -149) {
+          accelL = map(abs(yDisplacement), DEADZONE, (4095 - YCENTER_VAL), 0, 125);
+          accelL = constrain(accelL, 0, 125);
+          accelR = accelL - (2*accelL);
+        }
+      reverseR(speed + accelL);
+      reverseL(speed + accelR);
+      printRVMessage(millis());
     }
 
     //debugging line below
-    //Serial.printf("Raw X: %d | Displacement: %d\nRaw y: %d | Y Displacement: %d\n", rawX, displacement, rawY, yDisplacement);
+    //Serial.printf("Raw X: %d | Displacement: %d\nRaw y: %d | Y Displacement: %d\n", rawX, xDisplacement, rawY, yDisplacement);
 
     //trigger honk
     if (incomingData.click == LOW && lastClickState == HIGH && buzzerState == IDLE) {
@@ -147,19 +158,55 @@ void loop() {
   }
 }
 
-void forwards(int speed) {
+void forwardsR(int speed) {
   digitalWrite(AIN1, HIGH);
   digitalWrite(AIN2, LOW);
   analogWrite(PWMA, speed);
 }
 
+void forwardsL(int speed) {
+  digitalWrite(BIN2, HIGH);
+  digitalWrite(BIN1, LOW);
+  analogWrite(PWMB, speed);
+}
+
 void brake() {
   digitalWrite(AIN1, LOW);
   digitalWrite(AIN2, LOW);
+  digitalWrite(BIN2, LOW);
+  digitalWrite(BIN1, LOW);
 }
 
-void reverse(int speed) {
+void reverseR(int speed) {
   digitalWrite(AIN2, HIGH);
   digitalWrite(AIN1, LOW);
   analogWrite(PWMA, speed);
+}
+
+void reverseL(int speed) {
+  digitalWrite(BIN1, HIGH);
+  digitalWrite(BIN2, LOW);
+  analogWrite(PWMB, speed);
+}
+
+void printFWMessage(unsigned long current) {
+  if(current - serialTimer > 300) {
+    Serial.println("Forwards:");
+    Serial.print("accelL: ");
+    Serial.println(accelL);
+    Serial.print("accelR: ");
+    Serial.println(accelR);
+    serialTimer = current;
+  }
+}
+
+void printRVMessage(unsigned long current) {
+  if(current - serialTimer > 300) {
+    Serial.println("Reverse:");
+    Serial.print("accelR: ");
+    Serial.println(accelR);
+    Serial.print("accelL: ");
+    Serial.print(accelL);
+    serialTimer = current;
+  }
 }
