@@ -32,11 +32,15 @@ typedef struct struct_message {
 
 struct_message incomingData;
 volatile boolean newDataRec = false;
+portMUX_TYPE dataMux = portMUX_INITIALIZER_UNLOCKED;
 
 void OnDataRecv (const esp_now_recv_info *info, const uint8_t *incomingDataPtr, int len) {
-  memcpy(&incomingData, incomingDataPtr, sizeof(incomingData));
+  if (incomingDataPtr == nullptr || len != sizeof(struct_message)) return;
 
+  portENTER_CRITICAL(&dataMux);
+  memcpy(&incomingData, incomingDataPtr, sizeof(incomingData));
   newDataRec = true;
+  portEXIT_CRITICAL(&dataMux);
 }
 
 void setup() {
@@ -64,10 +68,19 @@ void setup() {
 }
 
 void loop() {
+  static struct_message latestInput = {90, 90, 0};
+  bool newData = false;
+  portENTER_CRITICAL(&dataMux);
   if (newDataRec) {
+    latestInput = incomingData;
     newDataRec = false;
+    newData = true;
+  }
+  portEXIT_CRITICAL(&dataMux);
+  if (newData) {
+    newData = false;
 
-    if (incomingData.click == LOW && lastClickState == HIGH) {
+    if (latestInput.click == LOW && lastClickState == HIGH) {
       //happens when joystick is clicked
       if (mode == MANUAL) {
         mode = AUTO;
@@ -76,11 +89,11 @@ void loop() {
       }
     } 
 
-    lastClickState = incomingData.click;
+    lastClickState = latestInput.click;
 
     if (mode == MANUAL) {
-      int rawX = incomingData.xValue;
-      int rawY = incomingData.yValue;
+      int rawX = latestInput.xValue;
+      int rawY = latestInput.yValue;
     
 
       int pitServoAngle = map(rawX, 4095, 0, 30, 160);
@@ -115,23 +128,57 @@ void smoothMove(int x, int y) {
   if (currentMillis - stepCount > speed) {
     stepCount = currentMillis;
     if (x > currentX) {
-      currentX += step;
+      if (x - currentX > 50) {
+        currentX += step*3;
+      } else if (x - currentX > 20) {
+        currentX += step*2;
+      } else if (x - currentX > 8) {
+        currentX += step;
+      } else {
+        currentX += step/2;
+      }
       if (currentX > x) {
         currentX = x;
       }
     } else if (x < currentX) {
-      currentX -= step;
+      if (currentX - x > 50) {
+        currentX -= step*3;
+      } else if (currentX - x > 20) {
+        currentX -= step*2;
+      } else if (currentX - x > 8) {
+        currentX -= step;
+      } else {
+        currentX -= step/2;
+      }
       if (currentX < x) {
         currentX = x;
       }
     }
     if (y > currentY) {
-      currentY += step;
+      if (y - currentY > 50) {
+        currentY += step*3;
+      } else if (y - currentY > 20) {
+        currentY += step*2;
+      } else if (y - currentY > 8) {
+        currentY += step;
+      } else {
+        currentY += step/2;
+      }
+
       if (currentY > y) {
         currentY = y;
       }
     } else if (y < currentY) {
-      currentY -= step;
+      if (currentY - y > 50) {
+        currentY -= step*3;
+      } else if (currentY - y > 20) {
+        currentY -= step*2;
+      } else if (currentY - y > 8) {
+        currentY -= step;
+      } else {
+        currentY -= step/2;
+      }
+
       if (currentY < y) {
         currentY = y;
       }
